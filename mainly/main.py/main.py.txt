@@ -1,0 +1,192 @@
+import logging
+import os
+from aiogram import Bot, Dispatcher, executor, types
+from aiogram.types import InputFile, InlineKeyboardButton, InlineKeyboardMarkup
+from keyboards import keyboard_main, pdf_choice_keyboard, payment_button, base_pdf_keyboard, pro_pdf_keyboard
+from aiogram.dispatcher.filters import Command
+from dotenv import load_dotenv
+
+load_dotenv()
+
+API_TOKEN = os.getenv("BOT_TOKEN")
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot)
+
+logging.basicConfig(level=logging.INFO)
+
+# === Пути к папкам ===
+BASE_DIR = os.path.dirname(__file__)
+IMAGE_DIR = os.path.join(BASE_DIR, "images")
+PDF_DIR = os.path.join(BASE_DIR, "pdf_files")
+FREE_PDF_DIR = os.path.join(PDF_DIR, "1Free")
+BASE_PDF_DIR = os.path.join(PDF_DIR, "2Base")
+PRO_PDF_DIR = os.path.join(PDF_DIR, "3Pro")
+VIP_PDF_DIR = os.path.join(PDF_DIR, "4VIP")
+
+# === Стартовое приветствие ===
+@dp.message_handler(commands=["start"])
+async def send_welcome(message: types.Message):
+    photo = InputFile(os.path.join(IMAGE_DIR, "bot_help_response.png"))
+    await bot.send_photo(
+        message.chat.id,
+        photo=photo,
+        caption=(
+            "Привет! 🤖\n\n"
+            "Я — бот проекта «Бизнес по шаблону».\n"
+            "Помогаю найти решения, которые могут пригодиться тебе на старте.\n\n"
+            "Выбери, что тебе интересно — разберёмся вместе:"
+        ),
+        reply_markup=keyboard_main
+    )
+
+# === Основной выбор PDF ===
+@dp.message_handler(commands=["files"])
+async def show_pdf_options(message: types.Message):
+    await message.answer("Выбери PDF-документ:", reply_markup=pdf_choice_keyboard())
+
+@dp.message_handler(commands=["pay"])
+async def show_payment(message: types.Message):
+    photo = InputFile(os.path.join(IMAGE_DIR, "bot_help_response.png"))
+    await bot.send_photo(
+        message.chat.id,
+        photo=photo,
+        caption="Выбирай нужный документ и переходи к оплате:",
+        reply_markup=payment_button()
+    )
+
+@dp.message_handler(commands=["check"])
+async def check_payment(message: types.Message):
+    photo = InputFile(os.path.join(IMAGE_DIR, "bot_checking_payment.png"))
+    await bot.send_photo(message.chat.id, photo=photo, caption="Проверяю оплату…")
+
+@dp.message_handler(commands=["test"])
+async def test(message: types.Message):
+    photo = InputFile(os.path.join(IMAGE_DIR, "bot_generating.png"))
+    await bot.send_photo(message.chat.id, photo=photo, caption="Документ готов, вот ваша ссылка:")
+    doc = InputFile(os.path.join(FREE_PDF_DIR, "02_Бизнес_план.pdf"))
+    await message.answer_document(doc)
+
+# === Каталоги BASE и PRO ===
+@dp.message_handler(commands=["base"])
+async def show_base_catalog(message: types.Message):
+    await message.answer("Выбери нишу из категории BASE:", reply_markup=base_pdf_keyboard())
+
+@dp.message_handler(commands=["pro"])
+async def show_pro_catalog(message: types.Message):
+    await message.answer("Выбери нишу из категории PRO:", reply_markup=pro_pdf_keyboard())
+
+# === Inline-хендлеры BASE и PRO ===
+@dp.callback_query_handler(lambda c: c.data.startswith("base_"))
+async def send_base_pdf(callback_query: types.CallbackQuery):
+    filename = f"{callback_query.data}.pdf"
+    path = os.path.join(BASE_PDF_DIR, filename)
+    await bot.send_document(callback_query.from_user.id, InputFile(path))
+
+@dp.callback_query_handler(lambda c: c.data.startswith("pro_"))
+async def send_pro_pdf(callback_query: types.CallbackQuery):
+    filename = f"{callback_query.data}.pdf"
+    path = os.path.join(PRO_PDF_DIR, filename)
+    await bot.send_document(callback_query.from_user.id, InputFile(path))
+
+# === Обработка free_... PDF ===
+@dp.callback_query_handler(lambda c: c.data.startswith("free_"))
+async def send_free_pdf(callback_query: types.CallbackQuery):
+    filename = f"{callback_query.data[5:]}.pdf"
+    path = os.path.join(FREE_PDF_DIR, filename)
+    if os.path.exists(path):
+        await bot.send_document(callback_query.from_user.id, InputFile(path))
+    else:
+        await bot.send_message(callback_query.from_user.id, "❌ Файл не найден.")
+
+# === Обработка возврата в меню ===
+@dp.callback_query_handler(lambda c: c.data == "go_start")
+async def return_to_menu(callback_query: types.CallbackQuery):
+    await bot.send_message(callback_query.from_user.id, "🔙 Главное меню:", reply_markup=keyboard_main)
+
+# === Блок «О проекте» — и кнопка, и команда ===
+@dp.message_handler(commands=["about"])
+@dp.message_handler(lambda message: "о проекте" in message.text.lower())
+async def show_about(message: types.Message):
+    text = (
+        "📘 *О проекте*\n\n"
+        "Этот бот — часть проекта *«Бизнес по шаблону»*.\n"
+        "Мы собираем лучшие готовые материалы для запуска:\n"
+        "— бизнес-планы\n"
+        "— стратегии продаж\n"
+        "— чек-листы и шаблоны\n\n"
+        "🎯 Всё чётко, понятно и по делу — чтобы ты мог начать уже сегодня.\n\n"
+        "📦 Есть бесплатные материалы (Free) и расширенные (Base / Pro / VIP)\n\n"
+        "VIP-формат — это подготовка уникального документа под конкретную компанию.\n"
+        "На основе анкеты мы учтём всё: цели, продукт, формат, аудиторию.\n"
+        "Чем больше тем ты захочешь охватить — тем глубже будет исследование.\n\n"
+        "📩 *Почта для связи:* bizplanhub8@gmail.com\n\n"
+        "🌐 *Канал:* @bizplanhub\n\n"
+        "Напиши свой вопрос — и я помогу разобраться 🙂"
+    )
+    await message.answer(text, parse_mode="Markdown", reply_markup=keyboard_main)
+
+# === Текстовые триггеры ===
+@dp.message_handler(lambda message: "помощь" in message.text.lower())
+async def show_help(message: types.Message):
+    photo = InputFile(os.path.join(IMAGE_DIR, "bot_help_response.png"))
+    await bot.send_photo(message.chat.id, photo=photo, caption="Нужна помощь? Напиши сюда или задай вопрос прямо в боте.", reply_markup=keyboard_main)
+
+@dp.message_handler(lambda message: "pdf" in message.text.lower())
+async def handle_pdf_request(message: types.Message):
+    photo = InputFile(os.path.join(IMAGE_DIR, "bot_generating.png"))
+    await bot.send_photo(message.chat.id, photo=photo, caption="Вот PDF-документы! Нажимай кнопку — и получишь файл 📄", reply_markup=pdf_choice_keyboard())
+
+@dp.message_handler(lambda message: "витрин" in message.text.lower())
+async def open_showcase(message: types.Message):
+    photo = InputFile(os.path.join(IMAGE_DIR, "bot_generating.png"))
+    await bot.send_photo(message.chat.id, photo=photo, caption="Вот PDF-документы! Нажимай кнопку — и получишь файл 📄", reply_markup=pdf_choice_keyboard())
+
+# === Превью/витрина PDF-документов ===
+@dp.message_handler(lambda message: "образц" in message.text.lower())
+async def show_previews(message: types.Message):
+    photo1 = InputFile(os.path.join(IMAGE_DIR, "preview_bizplan.png"))
+    await bot.send_photo(
+        message.chat.id,
+        photo=photo1,
+        caption="📄 *Бизнес-план для старта*\n\n— 12 готовых блоков\n— Подходит для инвесторов и самозапуска\n— PDF, 10 стр.",
+        parse_mode="Markdown"
+    )
+    photo2 = InputFile(os.path.join(IMAGE_DIR, "preview_sales.png"))
+    await bot.send_photo(
+        message.chat.id,
+        photo=photo2,
+        caption="📄 *Стратегия продаж*\n\n— Система действий на 30 дней\n— Подходит для онлайн и офлайн\n— PDF, 8 стр.",
+        parse_mode="Markdown"
+    )
+    await message.answer("Готов получить один из этих документов? Нажми кнопку «Оплатить» 👇", reply_markup=payment_button())
+
+# === Выдача PDF по кнопке ===
+@dp.callback_query_handler(lambda c: c.data == 'pdf_plan')
+async def send_pdf_plan(callback_query: types.CallbackQuery):
+    path = os.path.join(FREE_PDF_DIR, "02_Бизнес_план.pdf")
+    await bot.send_document(callback_query.from_user.id, InputFile(path))
+
+@dp.callback_query_handler(lambda c: c.data == 'pdf_sales')
+async def send_pdf_sales(callback_query: types.CallbackQuery):
+    path = os.path.join(FREE_PDF_DIR, "03_Стратегия_продаж.pdf")
+    await bot.send_document(callback_query.from_user.id, InputFile(path))
+
+@dp.callback_query_handler(lambda c: c.data == "get_5Ошибок")
+async def send_5oshibok(callback_query: types.CallbackQuery):
+    await bot.answer_callback_query(callback_query.id)
+    path = os.path.join(FREE_PDF_DIR, "01_5Ошибок.pdf")
+    await bot.send_document(callback_query.from_user.id, InputFile(path))
+
+@dp.message_handler(lambda message: "ошибк" in message.text.lower())
+async def send_5oshibok_on_keyword(message: types.Message):
+    path = os.path.join(FREE_PDF_DIR, "01_5Ошибок.pdf")
+    await bot.send_document(message.chat.id, InputFile(path))
+
+# === Fallback ===
+@dp.message_handler()
+async def fallback(message: types.Message):
+    await message.reply("Я пока не понял, что ты хочешь. Нажми кнопку ниже 👇", reply_markup=keyboard_main)
+
+if __name__ == "__main__":
+    print("✅ main.py активен")
+    executor.start_polling(dp, skip_updates=True)

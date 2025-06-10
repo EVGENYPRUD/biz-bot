@@ -1,0 +1,94 @@
+# === VIP-анкета с подсчётом и диапазоном цены ===
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
+
+class VIPForm(StatesGroup):
+    choosing_topics = State()
+
+vip_topics = [
+    "Анализ рынка в РФ",
+    "Анализ зарубежных рынков",
+    "Анализ конкурентов",
+    "Анализ цен",
+    "Маркетинговый анализ",
+    "SWOT-анализ",
+    "PEST-анализ",
+    "Финансовый анализ",
+    "Прогноз спроса",
+    "Анализ целевой аудитории",
+    "Анализ по конкретному городу",
+    "Сравнительный анализ регионов",
+    "Стратегический анализ",
+    "Риски и барьеры входа",
+    "Рекомендации по запуску",
+    "Индивидуальные комментарии"
+]
+
+def get_vip_keyboard(selected):
+    buttons = []
+    for i, topic in enumerate(vip_topics):
+        prefix = "✅ " if i in selected else "➕ "
+        buttons.append([InlineKeyboardButton(f"{prefix}{topic}", callback_data=f"vip_{i}")])
+    buttons.append([InlineKeyboardButton("Готово", callback_data="vip_done")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+@dp.message_handler(commands=["vip"])
+async def start_vip_form(message: types.Message, state: FSMContext):
+    await state.update_data(selected=set())
+    await VIPForm.choosing_topics.set()
+    await message.answer(
+        "📋 Выбери, какие темы тебя интересуют для индивидуального анализа:",
+        reply_markup=get_vip_keyboard(set())
+    )
+
+@dp.callback_query_handler(lambda c: c.data.startswith("vip_"), state=VIPForm.choosing_topics)
+async def handle_vip_selection(callback_query: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    selected = data.get("selected", set())
+
+    if callback_query.data == "vip_done":
+        count = len(selected)
+        if count == 0:
+            await callback_query.answer("Вы не выбрали ни одной темы.", show_alert=True)
+            return
+
+        # Градация цены
+        if count == 1:
+            price = "от 4.990 ₽"
+        elif 2 <= count <= 4:
+            price = "от 5.990 ₽"
+        elif 5 <= count <= 7:
+            price = "от 6.990 ₽"
+        elif 8 <= count <= 10:
+            price = "от 7.990 ₽"
+        elif 11 <= count <= 13:
+            price = "от 8.990 ₽"
+        else:
+            price = "до 9.990 ₽"
+
+        await bot.send_message(
+            callback_query.from_user.id,
+            f"📊 Вы выбрали {count} тем(ы). Примерная стоимость: *{price}*\n\n"
+            "📌 Мы подготовим индивидуальный документ и свяжемся с вами, как только он будет готов.\n"
+            "Если хотите добавить что-то ещё, напишите в сообщении — мы обязательно учтём.",
+            parse_mode="Markdown"
+        )
+        await state.finish()
+        return
+
+    # Тоггл выбора
+    topic_id = int(callback_query.data.split("_")[1])
+    if topic_id in selected:
+        selected.remove(topic_id)
+    else:
+        selected.add(topic_id)
+    await state.update_data(selected=selected)
+    await bot.edit_message_reply_markup(
+        chat_id=callback_query.message.chat.id,
+        message_id=callback_query.message.message_id,
+        reply_markup=get_vip_keyboard(selected)
+    )
